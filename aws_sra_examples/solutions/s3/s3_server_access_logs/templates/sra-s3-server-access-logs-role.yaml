@@ -1,0 +1,110 @@
+########################################################################
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+########################################################################
+AWSTemplateFormatVersion: 2010-09-09
+Description:
+  This template creates an IAM role for configuring S3 account logging within each account - 's3_server_access_logs'
+  solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples (sra-1ssgnse5t)
+
+Metadata:
+  SRA:
+    Version: 1.2
+    Order: 2
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: General Properties
+        Parameters:
+          - pSRASolutionName
+      - Label:
+          default: Role Properties
+        Parameters:
+          - pManagementAccountId
+          - pS3ServerAccessLoggingLambdaRoleName
+          - pS3ServerAccessLoggingRoleName
+
+    ParameterLabels:
+      pManagementAccountId:
+        default: Organization Management Account ID
+      pS3ServerAccessLoggingLambdaRoleName:
+        default: S3 Server Access Logging Lambda Role Name
+      pS3ServerAccessLoggingRoleName:
+        default: S3 Server Access Logging IAM Role Name
+      pSRASolutionName:
+        default: SRA Solution Name
+
+Parameters:
+  pManagementAccountId:
+    AllowedPattern: '^\d{12}$'
+    ConstraintDescription: Must be 12 digits
+    Description: Organization Management Account ID
+    Type: String
+  pS3ServerAccessLoggingRoleName:
+    AllowedPattern: '^[\w+=,.@-]{1,64}$'
+    ConstraintDescription: Max 64 alphanumeric characters. Also special characters supported [+, =, ., @, -]
+    Default: sra-s3-server-access-logging
+    Description: S3 Server Access Logging IAM Role Name
+    Type: String
+  pS3ServerAccessLoggingLambdaRoleName:
+    AllowedPattern: '^[\w+=,.@-]{1,64}$'
+    ConstraintDescription: Max 64 alphanumeric characters. Also special characters supported [+, =, ., @, -]
+    Default: sra-s3-server-access-logging-lambda
+    Description: S3 Server Access Logging Lambda Role Name
+    Type: String
+  pSRASolutionName:
+    AllowedValues: [s3-server-access-logging]
+    Default: s3-server-access-logging
+    Description: The SRA solution name. The default value is the folder name of the solution
+    Type: String
+
+Resources:
+  rS3ConfigurationRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: Actions require * in resource
+          - id: W28
+            reason: Explicit name provided
+    Properties:
+      RoleName: !Ref pS3ServerAccessLoggingRoleName
+      Description: !Sub SRA role assumed by '${pS3ServerAccessLoggingLambdaRoleName}' to enable the S3 server access logging
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Condition:
+              StringEquals:
+                aws:PrincipalArn:
+                  - !Sub arn:${AWS::Partition}:iam::${pManagementAccountId}:role/${pS3ServerAccessLoggingLambdaRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${pManagementAccountId}:role/Admin
+            Principal:
+              AWS:
+                - !Sub arn:${AWS::Partition}:iam::${pManagementAccountId}:root
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+      Policies:
+        - PolicyName: sra-s3-server-access-logging-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: S3ServerAccessLogging
+                Effect: Allow
+                Action:
+                  - s3:GetBucketLogging
+                  - s3:PutBucketLogging
+                  - s3:GetBucketTagging
+                  - s3:PutBucketTagging
+                  - s3:GetBucketAcl
+                  - s3:PutBucketAcl
+                  - s3:GetAccountPublicAccessBlock
+                Resource: '*'
+
+Outputs:
+  oS3ConfigurationRoleArn:
+    Description: SRA S3 Server Access Logging Role
+    Value: !GetAtt rS3ConfigurationRole.Arn
