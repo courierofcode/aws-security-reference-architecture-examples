@@ -206,3 +206,61 @@ Resources:
         - Key: sra-solution
           Value: !Ref pSRASolutionName
 
+  rS3ServerAccessLogsStack:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    DependsOn:
+      - rS3ServerAccessLogsRoleStackSet
+      - rS3ServerAccessLogsRoleStack
+    UpdateReplacePolicy: Delete
+    Properties:
+      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs.yaml
+      Parameters:
+        pComplianceFrequency: !Ref pComplianceFrequency
+        pCreateLambdaLogGroup: !Ref pCreateLambdaLogGroup
+        pEnforceS3ServerAccessLogsTag: !Ref pEnforceS3ServerAccessLogsTag
+        pS3ServerAccessLogsTagValue: !Ref pS3ServerAccessLogsTagValue
+        pLambdaLogGroupKmsKey: !Ref pLambdaLogGroupKmsKey
+        pLambdaLogGroupRetention: !Ref pLambdaLogGroupRetention
+        pLambdaLogLevel: !Ref pLambdaLogLevel
+        pOrganizationId: !Ref pOrganizationId
+        pManagementAccountId: !Ref AWS::AccountId
+        pSRAAlarmEmail: !Ref pSRAAlarmEmail
+        pSRAStagingS3BucketName: !Ref pSRAStagingS3BucketName
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+
+  rS3ServerAccessLogsGlobalEventsStackSet:
+    Type: AWS::CloudFormation::StackSet
+    Condition: cNotGlobalRegionUsEast1
+    DependsOn: rS3ServerAccessLogsStack
+    Properties:
+      StackSetName: sra-s3-server-access-logs-global-events
+      AdministrationRoleARN: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/service-role/AWSControlTowerStackSetRole
+      CallAs: SELF
+      Capabilities:
+        - CAPABILITY_NAMED_IAM
+      Description:
+        !Sub ${pSRASolutionVersion} - Deploys EventBridge Rules via ${pSRASolutionName} for capturing global events forwarding to the home region.
+      ExecutionRoleName: AWSControlTowerExecution
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureTolerancePercentage: 0
+        MaxConcurrentPercentage: 100
+        RegionConcurrencyType: PARALLEL
+      PermissionModel: SELF_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            Accounts:
+              - !Ref AWS::AccountId
+          Regions:
+            - us-east-1
+      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-global-events.yaml
+      Parameters:
+        - ParameterKey: pHomeRegion
+          ParameterValue: !Ref AWS::Region
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName

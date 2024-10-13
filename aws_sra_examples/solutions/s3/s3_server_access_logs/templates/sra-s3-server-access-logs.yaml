@@ -1,0 +1,9 @@
+########################################################################
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+########################################################################
+AWSTemplateFormatVersion: 2010-09-09
+Description:
+  This template creates the Lambda function, buckets and associated resources for storing s3 server access logs by region within each account - 's3_server_access_logs'
+  solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples 
+
