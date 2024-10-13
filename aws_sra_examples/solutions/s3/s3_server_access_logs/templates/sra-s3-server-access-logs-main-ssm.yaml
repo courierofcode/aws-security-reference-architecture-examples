@@ -158,3 +158,51 @@ Parameters:
     Description: The SRA solution version. Used to trigger updates on the nested StackSets.
     Type: String
 
+Conditions:
+  cNotGlobalRegionUsEast1: !Not [!Equals [!Ref 'AWS::Region', us-east-1]]
+
+Resources:
+  rS3ServerAccessLogsRoleStackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      StackSetName: sra-s3-server-access-logs-role
+      AutoDeployment:
+        Enabled: true
+        RetainStacksOnAccountRemoval: false
+      CallAs: SELF
+      Capabilities:
+        - CAPABILITY_NAMED_IAM
+      Description: !Sub ${pSRASolutionVersion} - Deploys an IAM role via ${pSRASolutionName} for configuring S3 server access logs.
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureTolerancePercentage: 100
+        MaxConcurrentPercentage: 100
+        RegionConcurrencyType: PARALLEL
+      PermissionModel: SERVICE_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds:
+              - !Ref pRootOrganizationalUnitId
+          Regions:
+            - !Ref AWS::Region
+      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-role.yaml
+      Parameters:
+        - ParameterKey: pManagementAccountId
+          ParameterValue: !Ref AWS::AccountId
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+
+  rS3ServerAccessLogsRoleStack:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-role.yaml
+      Parameters:
+        pManagementAccountId: !Ref AWS::AccountId
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+
