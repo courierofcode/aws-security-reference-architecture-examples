@@ -1,0 +1,87 @@
+########################################################################
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+########################################################################
+AWSTemplateFormatVersion: 2010-09-09
+Description:
+  This template creates and configures an S3 bucket in the Log Archive Account -
+  's3_server_access_logs' solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples (sra-1u3sd7f8e)
+
+Metadata:
+  SRA:
+    Version: 1.0
+    Order: 2
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: General Properties
+        Parameters:
+          - pSRASolutionName
+
+      - Label:
+          default: S3 Server Access Logs S3 Properties
+        Parameters:
+          - pBucketNamePrefix
+
+    ParameterLabels:
+      pBucketNamePrefix:
+        default: Bucket Name Prefix
+      pSRASolutionName:
+        default: SRA Solution Name
+
+Parameters:
+  pBucketNamePrefix:
+    AllowedPattern: ^$|^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription:
+      S3 bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Description: S3 bucket prefix. The account and region will get added to the end. e.g. bucket-prefix-123456789012-us-east-1
+    Type: String
+
+  pSRASolutionName:
+    AllowedValues: [sra-s3-server-access-logs]
+    Default: sra-s3-server-access-logs
+    Description: The SRA solution name. The default value is the folder name of the solution
+    Type: String
+
+Resources:
+  rS3ServerAccessLogsBucket:
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: S3 access logging is not enabled.
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: S3 access logging is not enabled.
+    Properties:
+      BucketName: !Sub ${pBucketNamePrefix}-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+    # DeletionPolicy: Retain
+    # UpdateReplacePolicy: Retain
+
+  rS3ServerAccessLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref rS3ServerAccessLogsBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${pBucketNamePrefix}-${AWS::AccountId}-${AWS::Region}/*'
+          - Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${pBucketNamePrefix}-${AWS::AccountId}-${AWS::Region}/*'
+            # Condition:
+            #   StringEquals:
+            #     aws:SourceAccount: !Ref 'AWS::AccountId'

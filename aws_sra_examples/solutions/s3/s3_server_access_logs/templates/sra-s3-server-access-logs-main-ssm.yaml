@@ -5,11 +5,11 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description:
   This template creates Lambda function and associated resources to enable the S3 account level server access logs -
-  's3_server_access_logs' solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples
+  's3_server_access_logs' solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples (sra-1u3sd7f8e)
 
 Metadata:
   SRA:
-    Version: 1.3
+    Version: 1.0
     Order: 1
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -19,19 +19,30 @@ Metadata:
           - pSRASolutionName
           - pSRASolutionVersion
           - pSRAStagingS3BucketName
-          - pRootOrganizationalUnitId
           - pSRAAlarmEmail
-
-      - Label:
-          default: Lambda Function Properties
-        Parameters:
+          - pAuditAccountId
+          - pLogArchiveAccountId
+          - pManagementAccountId
+          - pRootOrganizationalUnitId
           - pOrganizationId
+          - pSourceStackName  
 
       - Label:
-          default: S3 Server Access Logging Properties
+          default: IAM Properties
         Parameters:
-          - pEnforceS3ServerAccessLogsTag
-          - pS3ServerAccessLogsTagValue
+          - pStackSetAdminRole
+          - pStackExecutionRole
+
+      - Label:
+          default: S3 Server Access Logs Configuration Properties
+        Parameters:
+          - pBucketNamePrefix
+          - pEnableS3ServerAccessLogs
+          - pRegionLinkingMode
+          - pControlTowerRegionsOnly
+          - pEnabledRegions
+          - pHomeRegion
+          - pControlTowerRegions
 
       - Label:
           default: General Lambda Function Properties
@@ -47,14 +58,35 @@ Metadata:
           - pComplianceFrequency
 
     ParameterLabels:
+      pStackSetAdminRole:
+        default: Stack Set Role
+      pStackExecutionRole:
+        default: Stack execution role
+      pAuditAccountId:
+        default: Audit Account ID
+      pLogArchiveAccountId:
+        default: Log Archive Account ID
+      pManagementAccountId:
+        default: Management Account ID
+      pBucketNamePrefix:
+        default: S3 Log Bucket Name Prefix
       pComplianceFrequency:
         default: Frequency to Check for Organizational Compliance
+        
+
+      pControlTowerRegions:
+        default: Control Tower Regions 
+      pHomeRegion:
+        default: Home Region
+
+      pControlTowerRegionsOnly:
+        default: Control Tower Regions Only
       pCreateLambdaLogGroup:
         default: Create Lambda Log Group
-      pEnforceS3ServerAccessLogsTag:
-        default: Enforce S3 Server Access Logging Tag
-      pS3ServerAccessLogsTagValue:
-        default: S3 Server Access Logging Tag Value
+      pEnableS3ServerAccessLogs:
+        default: Enable S3 Server Access Logs
+      pEnabledRegions:
+        default: (Optional) Enabled Regions
       pLambdaLogGroupKmsKey:
         default: (Optional) Lambda Logs KMS Key
       pLambdaLogGroupRetention:
@@ -63,8 +95,12 @@ Metadata:
         default: Lambda Log Level
       pOrganizationId:
         default: Organization ID
+      pRegionLinkingMode:
+        default: Region Linking Mode
       pRootOrganizationalUnitId:
         default: Root Organizational Unit ID
+      pSourceStackName:
+        default: (Optional) Source Stack Name
       pSRAAlarmEmail:
         default: (Optional) SRA Alarm Email
       pSRASolutionName:
@@ -75,6 +111,46 @@ Metadata:
         default: SRA Staging S3 Bucket Name
 
 Parameters:
+  pStackSetAdminRole:
+    AllowedValues: [sra-stackset]
+    Default: sra-stackset
+    Description: The administration role name that is used in the stackset.
+    Type: String
+  pStackExecutionRole:
+    AllowedValues: [sra-execution]
+    Default: sra-execution
+    Description: The execution role name that is used in the stack.
+    Type: String
+  pAuditAccountId:
+    AllowedPattern: '^([\w.-]{1,900})$|^(\/[\w.-]{1,900})*[\w.-]{1,900}$'
+    ConstraintDescription:
+      Must be alphanumeric or special characters [., _, -]. In addition, the slash character ( / ) used to delineate hierarchies in parameter names.
+    Default: /sra/control-tower/audit-account-id
+    Description: SSM Parameter for AWS Account ID of the Control Tower account to audit organization.
+    Type: AWS::SSM::Parameter::Value<String>
+  
+  pLogArchiveAccountId:
+    AllowedPattern: '^([\w.-]{1,900})$|^(\/[\w.-]{1,900})*[\w.-]{1,900}$'
+    ConstraintDescription:
+      Must be alphanumeric or special characters [., _, -]. In addition, the slash character ( / ) used to delineate hierarchies in parameter names.
+    Default: /sra/control-tower/log-archive-account-id
+    Description: SSM Parameter for AWS Account ID of the Control Tower account to archive logs.
+    Type: AWS::SSM::Parameter::Value<String>
+  pManagementAccountId:
+    AllowedPattern: '^([\w.-]{1,900})$|^(\/[\w.-]{1,900})*[\w.-]{1,900}$'
+    ConstraintDescription:
+      Must be alphanumeric or special characters [., _, -]. In addition, the slash character ( / ) used to delineate hierarchies in parameter names.
+    Default: /sra/control-tower/management-account-id
+    Description: SSM Parameter for AWS Account ID of the Control Tower account to manage organization.
+    Type: AWS::SSM::Parameter::Value<String>
+  
+  pBucketNamePrefix:
+    AllowedPattern: ^$|^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$
+    ConstraintDescription:
+      S3 bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Default: sra-s3-server-access-logs
+    Description: S3 bucket prefix. The account and region will get added to the end. e.g. bucket-prefix-123456789012-us-east-1
+    Type: String
   pComplianceFrequency:
     ConstraintDescription: Compliance Frequency must be a number between 1 and 30, inclusive.
     Default: 7
@@ -82,6 +158,21 @@ Parameters:
     MinValue: 1
     MaxValue: 30
     Type: Number
+
+  pControlTowerRegions:
+    Type: AWS::SSM::Parameter::Value<List<String>>
+    Description: SSM Parameter for the list of enabled regions from AWS Control Tower
+    Default: /sra/regions/customer-control-tower-regions
+  pHomeRegion:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: SSM Parameter for the home region
+    Default: /sra/control-tower/home-region
+
+  pControlTowerRegionsOnly:
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: Only enable in the Control Tower governed regions
+    Type: String
   pCreateLambdaLogGroup:
     AllowedValues: ['true', 'false']
     Default: 'false'
@@ -89,15 +180,20 @@ Parameters:
       Indicates whether a CloudWatch Log Group should be explicitly created for the Lambda function, to allow for setting a Log Retention and/or KMS
       Key for encryption.
     Type: String
-  pEnforceS3ServerAccessLogsTag:
+
+  pEnableS3ServerAccessLogs:
     AllowedValues: ['true', 'false']
     Default: 'true'
-    Description: Enforce the presence of the "sra-s3-server-access-logs-enabled" tag on S3 buckets
+    Description: Enforces the presence of the "sra-s3-server-access-logs-enabled" tag on new S3 buckets and sets the value to true or false.
     Type: String
-  pS3ServerAccessLogsTagValue:
-    AllowedValues: ['true']
-    Default: 'true'
-    Description: The required value for the "sra-s3-server-access-logs-enabled" tag
+
+  pEnabledRegions:
+    AllowedPattern: '^$|^([a-z0-9-]{1,64})$|^(([a-z0-9-]{1,64},)*[a-z0-9-]{1,64})$'
+    ConstraintDescription:
+      Only lowercase letters, numbers, and hyphens ('-') allowed. (e.g. us-east-1) Additional AWS regions can be provided, separated by commas. (e.g.
+      us-east-1,ap-southeast-2)
+    Default: ''
+    Description: (Optional) Enabled regions (AWS regions, separated by commas). Leave blank to enable all regions.
     Type: String
   pLambdaLogGroupKmsKey:
     AllowedPattern: '^$|^arn:(aws[a-zA-Z-]*){1}:kms:[a-z0-9-]+:\d{12}:key\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
@@ -107,15 +203,15 @@ Parameters:
       (Optional) KMS Key ARN to use for encrypting the Lambda logs data. If empty, encryption is enabled with CloudWatch Logs managing the server-side
       encryption keys.
     Type: String
-  pLambdaLogLevel:
-    AllowedValues: [DEBUG, INFO, ERROR]
-    Default: INFO
-    Description: Lambda Function Logging Level
-    Type: String
   pLambdaLogGroupRetention:
     AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
     Default: 14
     Description: Specifies the number of days you want to retain log events
+    Type: String
+  pLambdaLogLevel:
+    AllowedValues: [INFO, ERROR, DEBUG]
+    Default: INFO
+    Description: Lambda Function Logging Level
     Type: String
   pOrganizationId:
     AllowedPattern: '^([\w.-]{1,900})$|^(\/[\w.-]{1,900})*[\w.-]{1,900}$'
@@ -131,17 +227,27 @@ Parameters:
     Default: /sra/control-tower/root-organizational-unit-id
     Description: SSM Parameter for Root Organizational Unit ID
     Type: AWS::SSM::Parameter::Value<String>
-  pSRAAlarmEmail:
-    AllowedPattern: '^$|^([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)$'
-    ConstraintDescription: Email Validation as per RFC2822 standards.
+  pSourceStackName:
     Default: ''
     Description:
-      (Optional) Email address for receiving DLQ alarms. If empty, CloudWatch Alarm will not be created to notify when the DLQ has a queue depth of 1.
+      (Optional) Input parameter used for the source stack name e.g. Quick Setup. This parameter is used to handle the DependsOn requirement for the
+      Config Management Account solution within the Quick Setup solution.
+    Type: String
+  pSRAAlarmEmail:
+    AllowedPattern: '^$|^([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)$'
+    ConstraintDescription: Must be a valid email address.
+    Default: ''
+    Description: (Optional) Email address for receiving SRA alarms
     Type: String
   pSRASolutionName:
     AllowedValues: [sra-s3-server-access-logs]
     Default: sra-s3-server-access-logs
     Description: The SRA solution name. The default value is the folder name of the solution
+    Type: String
+  pSRASolutionVersion:
+    AllowedValues: [v1.0]
+    Default: v1.0
+    Description: The SRA solution version. Used to trigger updates on the nested StackSets.
     Type: String
   pSRAStagingS3BucketName:
     AllowedPattern: '^([\w.-]{1,900})$|^(\/[\w.-]{1,900})*[\w.-]{1,900}$'
@@ -152,98 +258,20 @@ Parameters:
       SSM Parameter for SRA Staging S3 bucket name for the artifacts relevant to solution. (e.g., lambda zips, CloudFormation templates) S3 bucket
       name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-).
     Type: AWS::SSM::Parameter::Value<String>
-  pSRASolutionVersion:
-    AllowedValues: [v1.3]
-    Default: v1.3
-    Description: The SRA solution version. Used to trigger updates on the nested StackSets.
-    Type: String
+  
 
 Conditions:
   cNotGlobalRegionUsEast1: !Not [!Equals [!Ref 'AWS::Region', us-east-1]]
 
 Resources:
-  rS3ServerAccessLogsRoleStackSet:
+  rLogArchiveAccountCentralS3StackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      StackSetName: sra-s3-server-access-logs-role
-      AutoDeployment:
-        Enabled: true
-        RetainStacksOnAccountRemoval: false
+      StackSetName: sra-s3-server-access-logs-central-archive-bucket
+      AdministrationRoleARN: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${pStackSetAdminRole}
       CallAs: SELF
-      Capabilities:
-        - CAPABILITY_NAMED_IAM
-      Description: !Sub ${pSRASolutionVersion} - Deploys an IAM role via ${pSRASolutionName} for configuring S3 server access logs.
-      ManagedExecution:
-        Active: true
-      OperationPreferences:
-        FailureTolerancePercentage: 100
-        MaxConcurrentPercentage: 100
-        RegionConcurrencyType: PARALLEL
-      PermissionModel: SERVICE_MANAGED
-      StackInstancesGroup:
-        - DeploymentTargets:
-            OrganizationalUnitIds:
-              - !Ref pRootOrganizationalUnitId
-          Regions:
-            - !Ref AWS::Region
-      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-role.yaml
-      Parameters:
-        - ParameterKey: pManagementAccountId
-          ParameterValue: !Ref AWS::AccountId
-      Tags:
-        - Key: sra-solution
-          Value: !Ref pSRASolutionName
-
-  rS3ServerAccessLogsRoleStack:
-    Type: AWS::CloudFormation::Stack
-    DeletionPolicy: Delete
-    UpdateReplacePolicy: Delete
-    Properties:
-      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-role.yaml
-      Parameters:
-        pManagementAccountId: !Ref AWS::AccountId
-      Tags:
-        - Key: sra-solution
-          Value: !Ref pSRASolutionName
-
-  rS3ServerAccessLogsStack:
-    Type: AWS::CloudFormation::Stack
-    DeletionPolicy: Delete
-    DependsOn:
-      - rS3ServerAccessLogsRoleStackSet
-      - rS3ServerAccessLogsRoleStack
-    UpdateReplacePolicy: Delete
-    Properties:
-      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs.yaml
-      Parameters:
-        pComplianceFrequency: !Ref pComplianceFrequency
-        pCreateLambdaLogGroup: !Ref pCreateLambdaLogGroup
-        pEnforceS3ServerAccessLogsTag: !Ref pEnforceS3ServerAccessLogsTag
-        pS3ServerAccessLogsTagValue: !Ref pS3ServerAccessLogsTagValue
-        pLambdaLogGroupKmsKey: !Ref pLambdaLogGroupKmsKey
-        pLambdaLogGroupRetention: !Ref pLambdaLogGroupRetention
-        pLambdaLogLevel: !Ref pLambdaLogLevel
-        pOrganizationId: !Ref pOrganizationId
-        pManagementAccountId: !Ref AWS::AccountId
-        pSRAAlarmEmail: !Ref pSRAAlarmEmail
-        pSRAStagingS3BucketName: !Ref pSRAStagingS3BucketName
-      Tags:
-        - Key: sra-solution
-          Value: !Ref pSRASolutionName
-
-  rS3ServerAccessLogsGlobalEventsStackSet:
-    Type: AWS::CloudFormation::StackSet
-    Condition: cNotGlobalRegionUsEast1
-    DependsOn: rS3ServerAccessLogsStack
-    Properties:
-      StackSetName: sra-s3-server-access-logs-global-events
-      AdministrationRoleARN: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/service-role/AWSControlTowerStackSetRole
-      CallAs: SELF
-      Capabilities:
-        - CAPABILITY_NAMED_IAM
-      Description:
-        !Sub ${pSRASolutionVersion} - Deploys EventBridge Rules via ${pSRASolutionName} for capturing global events forwarding to the home region.
-      ExecutionRoleName: AWSControlTowerExecution
+      Description: !Sub ${pSRASolutionVersion} - Creates the central S3 bucket in log archive account home region that stores all accounts logs.
+      ExecutionRoleName: !Ref pStackExecutionRole
       ManagedExecution:
         Active: true
       OperationPreferences:
@@ -254,13 +282,102 @@ Resources:
       StackInstancesGroup:
         - DeploymentTargets:
             Accounts:
-              - !Ref AWS::AccountId
+              - !Ref pLogArchiveAccountId
           Regions:
-            - us-east-1
-      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-global-events.yaml
+            - !Ref pHomeRegion
+      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-logarchive-bucket.yaml
       Parameters:
-        - ParameterKey: pHomeRegion
-          ParameterValue: !Ref AWS::Region
+        - ParameterKey: pBucketNamePrefix
+          ParameterValue: !Sub ${pBucketNamePrefix}-central
       Tags:
         - Key: sra-solution
           Value: !Ref pSRASolutionName
+  
+  rLogArchiveAccountRegionalS3StackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      StackSetName: sra-s3-server-access-logs-regional-archive-buckets
+      AdministrationRoleARN: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${pStackSetAdminRole}
+      CallAs: SELF
+      Description: !Sub ${pSRASolutionVersion} - Creates the regional S3 buckets in log archive account for the managed regions.
+      ExecutionRoleName: !Ref pStackExecutionRole
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureTolerancePercentage: 0
+        MaxConcurrentPercentage: 100
+        RegionConcurrencyType: PARALLEL
+      PermissionModel: SELF_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            Accounts:
+              - !Ref pLogArchiveAccountId
+          Regions: !Ref pControlTowerRegions
+      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-logarchive-bucket.yaml
+      Parameters:
+        - ParameterKey: pBucketNamePrefix
+          ParameterValue: !Sub ${pBucketNamePrefix}-regional
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+
+  rAccountCentralS3StackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      StackSetName: sra-s3-server-access-logs-account-central-bucket
+      AdministrationRoleARN: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${pStackSetAdminRole}
+      CallAs: SELF
+      Description: !Sub ${pSRASolutionVersion} - Creates the central S3 bucket for account in the home region.
+      ExecutionRoleName: !Ref pStackExecutionRole
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureTolerancePercentage: 0
+        MaxConcurrentPercentage: 100
+        RegionConcurrencyType: PARALLEL
+      PermissionModel: SELF_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            Accounts:
+              - !Ref pAuditAccountId
+              - !Ref pManagementAccountId
+          Regions: 
+              - !Ref pHomeRegion
+      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-account-bucket.yaml
+      Parameters:
+        - ParameterKey: pBucketNamePrefix
+          ParameterValue: !Sub ${pBucketNamePrefix}-central
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+  
+  rAccountRegionalS3StackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      StackSetName: sra-s3-server-access-logs-account-regional-buckets
+      AdministrationRoleARN: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${pStackSetAdminRole}
+      CallAs: SELF
+      Description: !Sub ${pSRASolutionVersion} - Creates the regional S3 buckets for each independent non-log archive account in the managed regions.
+      ExecutionRoleName: !Ref pStackExecutionRole
+      ManagedExecution:
+        Active: true
+      OperationPreferences:
+        FailureTolerancePercentage: 0
+        MaxConcurrentPercentage: 100
+        RegionConcurrencyType: PARALLEL
+      PermissionModel: SELF_MANAGED
+      StackInstancesGroup:
+        - DeploymentTargets:
+            Accounts:
+              - !Ref pAuditAccountId
+              - !Ref pManagementAccountId
+          Regions: !Ref pControlTowerRegions
+      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs-account-bucket.yaml
+      Parameters:
+        - ParameterKey: pBucketNamePrefix
+          ParameterValue: !Sub ${pBucketNamePrefix}-regional
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+  
+  
