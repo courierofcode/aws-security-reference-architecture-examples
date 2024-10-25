@@ -4,12 +4,12 @@
 ########################################################################
 AWSTemplateFormatVersion: 2010-09-09
 Description:
-  This template creates an IAM role for configuring S3 account logging within each account - 's3_server_access_logs'
-  solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples (sra-1ssgnse5t)
+  This template creates an IAM role for configuring S3 srever access logs within each account - 's3_server_access_logs'
+  solution in the repo, https://github.com/aws-samples/aws-security-reference-architecture-examples (sra-1u3sd7f8e)
 
 Metadata:
   SRA:
-    Version: 1.2
+    Version: 1.0
     Order: 2
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -20,46 +20,74 @@ Metadata:
       - Label:
           default: Role Properties
         Parameters:
+          - pAuditAccountId
+          - pLogArchiveAccountId
           - pManagementAccountId
-          - pS3ServerAccessLoggingLambdaRoleName
-          - pS3ServerAccessLoggingRoleName
+          - pS3ServerAccessLogsLambdaRoleName
+          - pS3ServerAccessLogsRoleName
+          - pEventBridgeRoleName
 
     ParameterLabels:
+      pAuditAccountId:
+        default: Audit Account ID
+      pLogArchiveAccountId:
+        default: Log Archive Account ID
       pManagementAccountId:
         default: Organization Management Account ID
-      pS3ServerAccessLoggingLambdaRoleName:
-        default: S3 Server Access Logging Lambda Role Name
-      pS3ServerAccessLoggingRoleName:
-        default: S3 Server Access Logging IAM Role Name
+      pS3ServerAccessLogsLambdaRoleName:
+        default: S3 Server Access Logs Lambda Role Name
+      pS3ServerAccessLogsRoleName:
+        default: Se Server Access Logs Role
+      pEventBridgeRoleName:
+        default: Event Bridge Role Name
+
       pSRASolutionName:
         default: SRA Solution Name
 
 Parameters:
+  pAuditAccountId:
+    AllowedPattern: '^\d{12}$'
+    ConstraintDescription: Must be 12 digits
+    Description: Audit account ID
+    Type: String
+  pLogArchiveAccountId:
+    AllowedPattern: '^\d{12}$'
+    ConstraintDescription: Must be 12 digits
+    Description: Log Archive account ID
+    Type: String
   pManagementAccountId:
     AllowedPattern: '^\d{12}$'
     ConstraintDescription: Must be 12 digits
     Description: Organization Management Account ID
     Type: String
-  pS3ServerAccessLoggingRoleName:
+  pS3ServerAccessLogsLambdaRoleName:
     AllowedPattern: '^[\w+=,.@-]{1,64}$'
     ConstraintDescription: Max 64 alphanumeric characters. Also special characters supported [+, =, ., @, -]
-    Default: sra-s3-server-access-logging
-    Description: S3 Server Access Logging IAM Role Name
-    Type: String
-  pS3ServerAccessLoggingLambdaRoleName:
+    Default: sra-s3-server-access-logs-lambda
+    Description: S3 Server Access Logs Lambda Role Name
+    Type: String   
+  pS3ServerAccessLogsRoleName:
     AllowedPattern: '^[\w+=,.@-]{1,64}$'
     ConstraintDescription: Max 64 alphanumeric characters. Also special characters supported [+, =, ., @, -]
-    Default: sra-s3-server-access-logging-lambda
-    Description: S3 Server Access Logging Lambda Role Name
+    Default: sra-s3-server-access-logs
+    Description: S3 Server Access Logs Configuration IAM Role Name
     Type: String
+
+  pEventBridgeRoleName:
+    AllowedPattern: '^[\w+=,.@-]{1,64}$'
+    ConstraintDescription: Max 64 alphanumeric characters. Also special characters supported [+, =, ., @, -]
+    Default: sra-eventbridge-configuration
+    Description: S3 Server Access Logs IAM Role Name
+    Type: String
+  
   pSRASolutionName:
-    AllowedValues: [s3-server-access-logging]
-    Default: s3-server-access-logging
+    AllowedValues: [sra-s3-server-access-logs]
+    Default: sra-s3-server-access-logs
     Description: The SRA solution name. The default value is the folder name of the solution
     Type: String
 
 Resources:
-  rS3ConfigurationRole:
+  rConfigurationRole:
     Type: AWS::IAM::Role
     Metadata:
       cfn_nag:
@@ -69,30 +97,36 @@ Resources:
           - id: W28
             reason: Explicit name provided
     Properties:
-      RoleName: !Ref pS3ServerAccessLoggingRoleName
-      Description: !Sub SRA role assumed by '${pS3ServerAccessLoggingLambdaRoleName}' to enable the S3 server access logging
+      RoleName: !Ref pS3ServerAccessLogsRoleName
+      Description: !Sub SRA role assumed by '${pS3ServerAccessLogsLambdaRoleName}' to enable the S3 server access logs
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
-          - Action: sts:AssumeRole
-            Effect: Allow
+          - Effect: Allow
+            Action: sts:AssumeRole
             Condition:
               StringEquals:
                 aws:PrincipalArn:
-                  - !Sub arn:${AWS::Partition}:iam::${pManagementAccountId}:role/${pS3ServerAccessLoggingLambdaRoleName}
-                  - !Sub arn:${AWS::Partition}:iam::${pManagementAccountId}:role/Admin
+                  - !Sub arn:${AWS::Partition}:iam::${pManagementAccountId}:role/${pS3ServerAccessLogsLambdaRoleName}
             Principal:
               AWS:
                 - !Sub arn:${AWS::Partition}:iam::${pManagementAccountId}:root
-      Tags:
-        - Key: sra-solution
-          Value: !Ref pSRASolutionName
+      Path: '/'      
       Policies:
-        - PolicyName: sra-s3-server-access-logging-policy
+        - PolicyName: sra-s3-server-access-logs-policy-organizations
           PolicyDocument:
             Version: 2012-10-17
             Statement:
-              - Sid: S3ServerAccessLogging
+              - Sid: OrganizationsListAccounts
+                Effect: Allow
+                Action: organizations:ListAccounts
+                Resource: '*'
+
+        - PolicyName: sra-s3-server-access-logs-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: S3ServerAccessLogs
                 Effect: Allow
                 Action:
                   - s3:GetBucketLogging
@@ -104,7 +138,14 @@ Resources:
                   - s3:GetAccountPublicAccessBlock
                 Resource: '*'
 
-Outputs:
-  oS3ConfigurationRoleArn:
-    Description: SRA S3 Server Access Logging Role
-    Value: !GetAtt rS3ConfigurationRole.Arn
+        - PolicyName: sra-s3-server-access-logs-policy-iam
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: AllowReadIamActions
+                Effect: Allow
+                Action: iam:GetRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/*
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
