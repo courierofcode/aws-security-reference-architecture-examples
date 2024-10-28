@@ -430,4 +430,29 @@ Resources:
         - Key: sra-solution
           Value: !Ref pSRASolutionName
 
+  rS3ServerAccessLogsStack:
+    Type: AWS::CloudFormation::Stack
+    DeletionPolicy: Delete
+    DependsOn:
+      - rS3ServerAccessLogsIAMRoleStackSet
+      - rS3ServerAccessLogsIAMRoleStack
+    UpdateReplacePolicy: Delete
+    Properties:
+      TemplateURL: !Sub https://${pSRAStagingS3BucketName}.s3.${AWS::Region}.${AWS::URLSuffix}/${pSRASolutionName}/templates/sra-s3-server-access-logs.yaml
+      Parameters:
+        pBucketNamePrefix: !Ref pBucketNamePrefix
+        pComplianceFrequency: !Ref pComplianceFrequency
+        pCreateLambdaLogGroup: !Ref pCreateLambdaLogGroup
+        pLambdaLogGroupKmsKey: !Ref pLambdaLogGroupKmsKey
+        pLambdaLogGroupRetention: !Ref pLambdaLogGroupRetention
+        pLambdaLogLevel: !Ref pLambdaLogLevel
+        pOrganizationId: !Ref pOrganizationId
+        pManagementAccountId: !Ref pManagementAccountId
+        pLogArchiveAccountId: !Ref pLogArchiveAccountId
+        pSRAAlarmEmail: !Ref pSRAAlarmEmail
+        pSRAStagingS3BucketName: !Ref pSRAStagingS3BucketName
+      Tags:
+        - Key: sra-solution
+          Value: !Ref pSRASolutionName
+
   
